@@ -58,6 +58,34 @@ nothing on the invoice looks wrong, and the rulebook refuses it because the
 supplier changed their bank details two days earlier. The planner is not told
 about bank changes on purpose.
 
+## The approval queue
+
+Anything the rulebook parks is written to `pending_actions` and outlives the
+process that proposed it. `approve.py` lists what is waiting and takes the
+decision:
+
+```bash
+python run_agent.py --live      # queues what needs a signature
+python approve.py               # shows the queue
+python approve.py 1 approve alex "checked the PO"
+```
+
+Two constraints are enforced in the database rather than by convention:
+
+**The proposer cannot be the approver.** `agent:rules-v1` proposes a payment and
+is refused when it tries to decide on it. This is segregation of duties, the
+control every finance framework starts with, and it is the reason an agent can
+be trusted with a payment queue at all.
+
+**An action is queued at most once.** A UNIQUE index on the idempotency key means
+a second run of the agent adds nothing rather than filling the queue with copies
+of a decision nobody has answered yet.
+
+Executed payments land in `payments`, also keyed on the idempotency key, so the
+double-payment guard survives a crash. It is a database constraint, not a set in
+memory: two processes racing on the same invoice cannot both win, because the
+second INSERT fails rather than the second check reading a stale set.
+
 ## Tools exposed over MCP
 
 | Tool | Purpose |
@@ -92,13 +120,19 @@ action as done would cause the real run afterwards to be skipped as a duplicate.
 **The executor marks an action done only after the side effect returns.** Marking
 it first turns a transient failure into an action silently skipped on retry.
 
-## Known limitation
+## Known limitations
 
 The duplicate rule currently flags `INV-2208` and `INV-2212`, which differ by 75
 cents and 13 days. Whether that is a genuine duplicate or two legitimate freight
 invoices is not something the current rule can tell. The false-alarm rate is one
 of the four metrics the evaluation layer will measure; an agent that escalates
 everything is safe and useless.
+
+Approval is currently a name, not a role. Anyone who is not the proposer can sign
+off any amount. Role-based limits (one approver under 10,000, two above it) are
+the next piece, and `tests/test_seed_data.py` exists because the first version of
+the seed data used fixed dates and the bank-change rule silently stopped firing
+once they aged past the window.
 
 ## Run
 
@@ -143,7 +177,8 @@ finance.db         generated, not tracked
 ## Roadmap
 
 - [x] Layer 1 — agent, tools, decision loop, audit trail
-- [ ] Layer 2 — approval queue, rollback, real integrations
+- [x] Layer 2 — durable approval queue, segregation of duties, payment ledger
+- [ ] Layer 2b — payment run cut-off and cancellation, role-based approval limits
 - [ ] Layer 3 — labelled case set, four metrics, CI regression gate
 - [ ] Layer 4 — model routing, caching, token budget
 - [ ] Layer 5 — retries, queue, degradation when the model is down

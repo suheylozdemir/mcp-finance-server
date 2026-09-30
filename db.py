@@ -4,6 +4,7 @@ Safe to run more than once. Tables are created only if missing and the
 seed rows are keyed on their primary key, so re-running changes nothing.
 """
 import sqlite3
+from datetime import date, timedelta
 from pathlib import Path
 
 DB = str(Path(__file__).with_name("finance.db"))
@@ -23,6 +24,34 @@ CREATE TABLE IF NOT EXISTS invoices (
 CREATE TABLE IF NOT EXISTS suppliers (
     name             TEXT PRIMARY KEY,
     bank_changed_on  TEXT
+);
+
+-- Actions the rulebook parked for a human. One row per decision that
+-- needs a signature, so the queue survives the process that created it.
+CREATE TABLE IF NOT EXISTS pending_actions (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    invoice_no    TEXT NOT NULL,
+    action_type   TEXT NOT NULL,
+    payload       TEXT NOT NULL,          -- JSON of the proposed action
+    rule          TEXT NOT NULL,          -- why it needs approval
+    proposed_by   TEXT NOT NULL,
+    proposed_at   TEXT NOT NULL,
+    status        TEXT NOT NULL DEFAULT 'pending',   -- pending|approved|rejected
+    decided_by    TEXT,
+    decided_at    TEXT,
+    decision_note TEXT,
+    idem_key      TEXT NOT NULL UNIQUE    -- stops the same action queueing twice
+);
+
+-- What actually happened. Written only by the executor.
+CREATE TABLE IF NOT EXISTS payments (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    invoice_no  TEXT NOT NULL,
+    amount      REAL NOT NULL,
+    currency    TEXT NOT NULL,
+    queued_at   TEXT NOT NULL,
+    status      TEXT NOT NULL DEFAULT 'queued',      -- queued|cancelled|sent
+    idem_key    TEXT NOT NULL UNIQUE
 );
 """
 
@@ -44,11 +73,17 @@ INVOICES = [
     ("INV-2214", "Kestrel Cloud",       615.00, "AUD", "2026-09-05", "2026-10-05", "open",    ""),
 ]
 
+# Dates here are relative to the day the database is seeded, not fixed.
+# A hard-coded date quietly expires: the bank-change rule has a 3 day
+# window, so a literal date stops firing a few days later and the branch
+# it guards silently drops out of every run.
+_RECENTLY = (date.today() - timedelta(days=2)).isoformat()
+
 SUPPLIERS = [
     ("Harbour Logistics",  None),
     ("Bluestone Print",    None),
     ("Corella Software",   None),
-    ("Northbridge Legal",  "2026-09-20"),   # bank details changed recently
+    ("Northbridge Legal",  _RECENTLY),   # bank details changed two days ago
     ("Pacific Freight",    None),
     ("Kestrel Cloud",      None),
 ]

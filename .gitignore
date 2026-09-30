@@ -2,5 +2,6 @@ __pycache__/
 *.pyc
 finance.db
 finance.db-journal
+audit.jsonl
 .venv/
 .pytest_cache/
