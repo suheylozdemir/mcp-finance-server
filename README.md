@@ -49,9 +49,13 @@ is answered with a term a finance person recognises rather than a line number.
 
 ## What the current data exercises
 
-Running `python run_agent.py` over the seeded invoices produces 5 automatic
-actions, 4 parked for approval and 2 refused. Each branch is reachable, which is
-the point of the seed data.
+The seed holds 35 invoices from 13 suppliers: overdue, due today, due over the
+next weeks, on hold, matched and paid, plus a near-duplicate pair and a supplier
+whose bank details changed yesterday. Every date is relative to the day the
+database is seeded, so "what's due soon?" always has a real answer and no rule
+silently stops firing as the calendar moves. Running `python run_agent.py`
+produces 15 automatic actions, 11 parked for approval and 4 refused. Each branch
+is reachable, which is the point of the seed data.
 
 The case worth reading is `INV-2205`: the planner proposes payment because
 nothing on the invoice looks wrong, and the rulebook refuses it because the
@@ -90,8 +94,9 @@ second INSERT fails rather than the second check reading a stale set.
 
 | Tool | Purpose |
 |---|---|
-| `search_invoices(supplier, status, limit)` | filtered list, all parameters optional |
+| `search_invoices(supplier, status, due_within_days, limit)` | filtered list, all parameters optional; each line says how many days until due, or how many days overdue |
 | `get_invoice(invoice_no)` | one invoice in full, including free-text notes |
+| `cash_due_summary(days)` | payables overdue, due in the next `days` and on hold, totalled per currency and never converted, because an exchange rate is not something the tool knows |
 
 ## Design decisions
 
@@ -141,7 +146,7 @@ conda create -n mcp312 python=3.12 && conda activate mcp312
 pip install "mcp[cli]" pytest
 python db.py            # creates finance.db and seeds it
 python run_agent.py     # dry-run over every unpaid invoice
-pytest -q               # 12 tests
+pytest -q               # 26 tests
 mcp dev server.py       # opens MCP Inspector against the server
 ```
 
